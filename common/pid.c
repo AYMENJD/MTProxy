@@ -36,11 +36,9 @@
 
 npid_t PID;
 
-void init_common_PID (void) {
+void init_common_PID(void) {
   if (!PID.pid) {
-    int p = getpid ();
-    assert (!(p & 0xffff0000));
-    PID.pid = p;
+    PID.pid = getpid () & 0xffff;
   }
   if (!PID.utime) {
     PID.utime = time (0);
