@@ -16,7 +16,7 @@ yum groupinstall "Development Tools"
 
 Clone the repo:
 ```bash
-git clone https://github.com/TelegramMessenger/MTProxy
+git clone https://github.com/AYMENJD/MTProxy
 cd MTProxy
 ```
 
@@ -103,7 +103,3 @@ systemctl status MTProxy.service
 ```bash
 systemctl enable MTProxy.service
 ```
-
-## Docker image
-Telegram is also providing [official Docker image](https://hub.docker.com/r/telegrammessenger/proxy/).
-Note: the image is outdated.
