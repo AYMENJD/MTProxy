@@ -551,10 +551,8 @@ int tcp_rpcs_default_check_perm (connection_job_t C) {
   return RPCF_ALLOW_ENC | RPCF_REQ_DH | tcp_get_default_rpc_flags();
 }
 
-int tcp_rpcs_init_crypto (connection_job_t C, struct tcp_rpc_nonce_packet *P) {
-  struct connection_info *c = CONN_INFO (C);
-
-//  fprintf (stderr, "rpcs_init_crypto (%p [fd=%d], '%.*s')\n", c, c->fd, key_len, key);
+int tcp_rpcs_init_crypto(connection_job_t C, struct tcp_rpc_nonce_packet *P) {
+  struct connection_info *c = CONN_INFO(C);
   struct tcp_rpc_data *D = TCP_RPC_DATA(C);
 
   if (c->crypto) {
@@ -562,7 +560,7 @@ int tcp_rpcs_init_crypto (connection_job_t C, struct tcp_rpc_nonce_packet *P) {
   }
 
   if ((D->crypto_flags & (RPCF_ALLOW_ENC | RPCF_ALLOW_UNENC)) == RPCF_ALLOW_UNENC) {
-    return tcp_rpcs_init_fake_crypto (C);
+    return tcp_rpcs_init_fake_crypto(C);
   }
 
   if ((D->crypto_flags & (RPCF_ALLOW_ENC | RPCF_ALLOW_UNENC)) != RPCF_ALLOW_ENC) {
@@ -579,65 +577,68 @@ int tcp_rpcs_init_crypto (connection_job_t C, struct tcp_rpc_nonce_packet *P) {
     struct tcp_rpc_nonce_packet s;
     struct tcp_rpc_nonce_ext_packet x;
     struct tcp_rpc_nonce_dh_packet dh;
+    char raw[sizeof(struct tcp_rpc_nonce_dh_packet) + 64];
   } buf;
 
-  struct tcp_rpc_nonce_dh_packet *old_dh = 0, *new_dh = 0;
+  struct tcp_rpc_nonce_dh_packet *old_dh = NULL;
   unsigned char temp_dh[256];
   int temp_dh_len = 0;
 
   if (D->crypto_flags & RPCF_REQ_DH) {
-    new_dh = (struct tcp_rpc_nonce_dh_packet *)((char *)&buf - 4*RPC_MAX_EXTRA_KEYS);
     if (P->crypto_schema != RPC_CRYPTO_AES_DH) {
       return -1;
     }
-    old_dh = (struct tcp_rpc_nonce_dh_packet *)((char *)P + 4*(((struct tcp_rpc_nonce_dh_packet *) P)->extra_keys_count - RPC_MAX_EXTRA_KEYS));
+
+    old_dh = (struct tcp_rpc_nonce_dh_packet *)P;
     if (old_dh->dh_params_select != dh_params_select || !dh_params_select) {
       return -1;
     }
 
-    if (tcp_add_dh_accept () < 0) {
+    if (tcp_add_dh_accept() < 0) {
       return -1;
     }
 
-    temp_dh_len = dh_second_round (temp_dh, new_dh->g_a, old_dh->g_a);
-    assert (temp_dh_len == 256);
+    temp_dh_len = dh_second_round(temp_dh, buf.dh.g_a, old_dh->g_a);
+    assert(temp_dh_len == 256);
 
-    incr_active_dh_connections ();
-    __sync_fetch_and_or (&c->flags, C_ISDH);
+    incr_active_dh_connections();
+    __sync_fetch_and_or(&c->flags, C_ISDH);
   }
-  aes_generate_nonce (D->nonce);
+
+  aes_generate_nonce(D->nonce);
 
   struct aes_key_data aes_keys;
-
-  if (aes_create_keys (&aes_keys, 0, D->nonce, P->crypto_nonce, P->crypto_ts, nat_translate_ip (c->our_ip), c->our_port, c->our_ipv6, nat_translate_ip (c->remote_ip), c->remote_port, c->remote_ipv6, secret, temp_dh, temp_dh_len) < 0) {
+  if (aes_create_keys(&aes_keys, 0, D->nonce, P->crypto_nonce, P->crypto_ts,
+                     nat_translate_ip(c->our_ip), c->our_port, c->our_ipv6,
+                     nat_translate_ip(c->remote_ip), c->remote_port,
+                     c->remote_ipv6, secret, temp_dh, temp_dh_len) < 0) {
     return -1;
   }
 
-  if (aes_crypto_init (C, &aes_keys, sizeof (aes_keys)) < 0) {
+  if (aes_crypto_init(C, &aes_keys, sizeof(aes_keys)) < 0) {
     return -1;
   }
 
-  memcpy (buf.s.crypto_nonce, D->nonce, 16);
+  memcpy(buf.s.crypto_nonce, D->nonce, 16);
   buf.s.crypto_ts = D->nonce_time;
   buf.s.type = RPC_NONCE;
   buf.s.key_select = secret->key_signature;
 
   int buf_len;
-  if (!new_dh) {
+  if (!(D->crypto_flags & RPCF_REQ_DH)) {
     buf.s.crypto_schema = RPC_CRYPTO_AES;
-    buf_len = sizeof (struct tcp_rpc_nonce_packet);
+    buf_len = sizeof(struct tcp_rpc_nonce_packet);
   } else {
     buf.dh.crypto_schema = RPC_CRYPTO_AES_DH;
-    buf_len = sizeof (struct tcp_rpc_nonce_dh_packet) - 4*RPC_MAX_EXTRA_KEYS;
+    buf.dh.dh_params_select = dh_params_select;
     buf.dh.extra_keys_count = 0;
-    new_dh->dh_params_select = dh_params_select;
+    buf_len = sizeof(struct tcp_rpc_nonce_dh_packet);
   }
 
-  assert ((D->crypto_flags & (RPCF_ALLOW_ENC | RPCF_ENC_SENT)) == RPCF_ALLOW_ENC);
+  assert((D->crypto_flags & (RPCF_ALLOW_ENC | RPCF_ENC_SENT)) == RPCF_ALLOW_ENC);
   D->crypto_flags |= RPCF_ENC_SENT;
- 
-  tcp_rpc_conn_send_data_init (C, buf_len, &buf);
 
+  tcp_rpc_conn_send_data_init(C, buf_len, &buf);
 
   return 1;
 }

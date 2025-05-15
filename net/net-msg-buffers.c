@@ -272,9 +272,12 @@ void free_msg_buffers_chunk_internal (struct msg_buffers_chunk *C, struct msg_bu
   assert (C->buffer_size == CH->buffer_size);
   assert (C->tot_buffers == C->free_cnt[1]);
   assert (CH == C->ch_head);
-  
+
+  struct mp_queue *free_queue = C->free_block_queue;
+
   C->magic = 0;
   C->ch_head = 0;
+  C->free_block_queue = NULL;
 
   lock_chunk_head (CH);
   C->ch_next->ch_prev = C->ch_prev;
@@ -284,15 +287,14 @@ void free_msg_buffers_chunk_internal (struct msg_buffers_chunk *C, struct msg_bu
   CH->free_buffers -= C->tot_buffers;
   CH->tot_chunks--;
   unlock_chunk_head (CH);
-  
+
   assert (CH->tot_chunks >= 0);  
 
   __sync_fetch_and_add (&allocated_buffer_chunks, -1);
   MODULE_STAT->allocated_buffer_bytes -= MSG_BUFFERS_CHUNK_SIZE;
 
   memset (C, 0, sizeof (struct msg_buffers_chunk));
-  free (C);
-
+  
   int si = buffer_size_values - 1;
   while (si > 0 && &ChunkHeaders[si-1] != CH) {
     si--;
@@ -302,9 +304,10 @@ void free_msg_buffers_chunk_internal (struct msg_buffers_chunk *C, struct msg_bu
   if (ChunkSave[si] == C) {
     ChunkSave[si] = NULL;
   }
-  
-  free_mp_queue (C->free_block_queue);
-  C->free_block_queue = NULL;
+
+  free_mp_queue(free_queue);
+
+  free(C);
 }
 
 
